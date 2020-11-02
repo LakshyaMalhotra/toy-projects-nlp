@@ -68,21 +68,6 @@ def tensorize(word: str) -> InputTensors:
     return input_tensor, target_tensor
 
 
-class NameDataset(torch.utils.data.Dataset):
-    def __init__(self, names):
-        self.names = names
-
-    def __len__(self) -> int:
-        return len(self.names)
-
-    def __getitem__(self, item: int) -> InputTensors:
-        return tensorize(self.names[item])
-
-
-dataset = NameDataset(names)
-data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
-
-
 class LSTM(nn.Module):
     def __init__(
         self,
@@ -107,7 +92,7 @@ class LSTM(nn.Module):
     def forward(self, input, hidden):
         name_embed_out = self.name_embed(input)
         out, hidden = self.lstm(name_embed_out, hidden)
-        out = F.log_softmax(self.drop(self.linear(out), dim=2))
+        out = F.log_softmax(self.drop(self.linear(out)), dim=2)
 
         return out, hidden
 
@@ -139,33 +124,49 @@ class LSTM(nn.Module):
         return hidden
 
 
-input_size = n_letters
-output_size = n_letters
-hidden_size = 128
-name_embeddings = 8
-
-rnn = LSTM(
-    input_size=input_size,
-    hidden_size=hidden_size,
-    output_size=output_size,
-    name_embed_dim=name_embeddings,
-)
-device = (
-    torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-)
-rnn.to(device)
-print(rnn)
+# rnn = LSTM(
+#     input_size=input_size,
+#     hidden_size=hidden_size,
+#     output_size=output_size,
+#     name_embed_dim=name_embeddings,
+# )
+# device = (
+#     torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+# )
+# rnn.to(device)
+# print(rnn)
+# rnn.load_state_dict(torch.load("models/names.pt"))
 
 
 def sample(
     seed: str,
-    max_len: int = 10,
+    max_len: int = 5,
     break_on_eos: bool = True,
     eval_mode: bool = False,
 ) -> str:
     # optionally set evaluation mode to disable dropout
-    if eval_mode:
-        rnn.eval()
+    # if eval_mode:
+    #     rnn.eval()
+
+    input_size = n_letters
+    output_size = n_letters
+    hidden_size = 128
+    name_embeddings = 8
+
+    rnn = LSTM(
+        input_size=input_size,
+        hidden_size=hidden_size,
+        output_size=output_size,
+        name_embed_dim=name_embeddings,
+    )
+
+    device = (
+        torch.device("cuda")
+        if torch.cuda.is_available()
+        else torch.device("cpu")
+    )
+    rnn.to(device)
+    rnn.load_state_dict(torch.load("models/names.pt"))
 
     # disable gradient computation
     with torch.no_grad():
@@ -193,47 +194,5 @@ def sample(
     return output_name
 
 
-for _ in range(10):
-    seed = random.choice(string.ascii_letters)
-    print(f"{seed} --> {sample(seed)}")
-
-criterion = nn.NLLLoss()
-optimizer = torch.optim.RMSprop(rnn.parameters(), lr=0.0003)
-
-
-def train_step(
-    input_tensor: torch.LongTensor, target_tensor: torch.LongTensor
-) -> float:
-    optimizer.zero_grad()
-
-    hidden = rnn.init_hidden()
-    out, hidden = rnn(input_tensor, hidden)
-    loss = criterion(out[0, :, :], target_tensor[0, :])
-
-    loss.backward()  # computes gradients w.r.t. and stores gradient values on parameters
-    optimizer.step()  # is already aware of the parameters in the model, uses those gradients
-
-    return loss.item()
-
-
-n_epochs = 2
-losses = []
-running_loss = 0.0
-best_loss = 100000
-for epoch in range(n_epochs):
-    looper = tqdm.tqdm(data_loader, desc=f"epoch {epoch + 1}")
-    for i, tensors in enumerate(looper):
-        loss = train_step(*tensors)
-        running_loss += loss
-        if (i + 1) % 1000 == 0:
-            losses.append(loss)
-            looper.set_postfix({"Loss": running_loss / 1000.0})
-            if (running_loss / 1000.0) < best_loss:
-                torch.save(rnn.state_dict(), "models/names.pt")
-                best_loss = running_loss / 1000.0
-            running_loss = 0
-
-plt.figure(figsize=(8, 6))
-plt.plot(losses)
-plt.show()
-
+letter = "M"
+print(f"{letter} --> {sample(letter)}")
