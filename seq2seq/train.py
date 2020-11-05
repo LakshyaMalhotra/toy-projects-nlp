@@ -11,7 +11,7 @@ import model
 
 # Global variables
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-N_EPOCHS = 10
+N_EPOCHS = 25
 CLIP = 1
 
 
@@ -24,6 +24,27 @@ def epoch_time(start_time, end_time):
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def pad_collate(batch):
+    # Source: https://suzyahyah.github.io/pytorch/2019/07/01/DataLoader-Pad-Pack-Sequence.html
+    input_tensor, target_tensor = zip(*batch)
+    input_tensor_len = [len(x) for x in input_tensor]
+    target_tensor_len = [len(x) for x in target_tensor]
+
+    padded_input_tensor = nn.utils.rnn.pad_sequence(
+        input_tensor, batch_first=True
+    )
+    padded_target_tensor = nn.utils.rnn.pad_sequence(
+        target_tensor, batch_first=True
+    )
+
+    return (
+        padded_input_tensor,
+        padded_target_tensor,
+        input_tensor_len,
+        target_tensor_len,
+    )
 
 
 def train(
@@ -40,8 +61,7 @@ def train(
     model.train()
 
     for i, data in enumerate(data_loader):
-        input_tensor = data["input"]
-        target_tensor = data["output"]
+        input_tensor, target_tensor, input_len, target_len = data
 
         input_tensor = input_tensor.to(device)
         target_tensor = target_tensor.to(device)
@@ -49,13 +69,13 @@ def train(
         optimizer.zero_grad()
 
         output = model(input_tensor, target_tensor)
-        # print(f"Output size: {output.size()}")
-        # print(f"Target size: {target_tensor.size()}")
 
         output_dim = output.size(-1)
         output = output.view(-1, output_dim)
-        target_tensor = target_tensor.squeeze()
+        target_tensor = target_tensor.view(-1)
 
+        # print(f"Output size: {output.size()}")
+        # print(f"Target size: {target_tensor.size()}")
         loss = criterion(output, target_tensor)
 
         loss.backward()
@@ -82,8 +102,7 @@ def evaluate(model, data_loader, criterion, print_every=100, device=DEVICE):
 
     with torch.no_grad():
         for i, data in enumerate(data_loader):
-            input_tensor = data["input"]
-            target_tensor = data["output"]
+            input_tensor, target_tensor, input_len, target_len = data
 
             input_tensor = input_tensor.to(device)
             target_tensor = target_tensor.to(device)
@@ -94,7 +113,7 @@ def evaluate(model, data_loader, criterion, print_every=100, device=DEVICE):
 
             output_dim = output.size(-1)
             output = output.view(-1, output_dim)
-            target_tensor = target_tensor.squeeze()
+            target_tensor = target_tensor.view(-1)
 
             loss = criterion(output, target_tensor)
             # print(f"Loss: {loss}")
@@ -136,12 +155,13 @@ if __name__ == "__main__":
 
     # Training and test dataloaders
     data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, batch_size=1, shuffle=True
+        dataset_train, batch_size=32, shuffle=True, collate_fn=pad_collate
     )
     data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=1, shuffle=False
+        dataset_test, batch_size=16, shuffle=False, collate_fn=pad_collate
     )
 
+    # print(next(iter(data_loader_train)))
     # Define model specific parameters
     encoder_input_size = input_lang.n_words
     encoder_embed_dim = 300
@@ -177,9 +197,10 @@ if __name__ == "__main__":
     print("-" * 23)
     print("TRAINING AND VALIDATION")
     print("-" * 23)
+    print(f"Training on {DEVICE}.")
 
     # Define optimizer and loss function
-    optimizer = torch.optim.Adam(seq2seq_model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(seq2seq_model.parameters(), lr=0.001)
     criterion = nn.NLLLoss()
 
     best_valid_loss = float("inf")

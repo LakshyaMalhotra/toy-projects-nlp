@@ -13,7 +13,8 @@ class Fra2EngDataset:
         input_vector = pair[0]
         output_vector = pair[1]
 
-        return {
-            "input": torch.LongTensor(input_vector),
-            "output": torch.LongTensor(output_vector),
-        }
+        return torch.LongTensor(input_vector), torch.LongTensor(output_vector)
+        # return {
+        #     "input": torch.LongTensor(input_vector),
+        #     "output": torch.LongTensor(output_vector),
+        # }

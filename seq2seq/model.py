@@ -39,17 +39,18 @@ class DecoderRNN(nn.Module):
     def forward(self, input_dec, hidden):
         # input_dec size = [batch_size, output_size (size of output vocab)]
         embedded = self.embed(input_dec)
-        # embedded size = [batch_size, 1, embed_dim]
+        # embedded size = [batch_size, seq_len, embed_dim]
 
         # print(f"Output shape of decoder embedding: {embedded.size()}")
         embedded = F.relu(embedded)
 
         output, hidden = self.rnn(embedded)
-        # output size = [batch_size, 1, hidden_dim]
-        # hidden_dim = [n_layers*n_directions, batch_size, hidden_size]
+        # output size = [batch_size, seq_len, hidden_dim]
+        # hidden_dim = [n_layers*n_directions, batch_size, hidden_size];
+        # batch size is in `dim=1` of the hidden size even after setting `batch_first`=True
 
-        output = F.log_softmax(self.linear(output[0]), dim=1)
-        # output size = [1, output_size]
+        output = F.log_softmax(self.linear(output.squeeze(1)), dim=1)
+        # output size = [batch_size, output_size]
         return output, hidden
 
     # def init_hidden(self, batch_size=1):
@@ -80,23 +81,26 @@ class Seq2Seq(nn.Module):
         # tensor to store the decoder outputs
         # shape of target tensor: (batch_size, target_length)
         target_length = target_tensor.size(1)
-        outputs = torch.zeros(1, target_length, self.target_vocab_size).to(
-            self.device
-        )
+        batch_size = target_tensor.size(0)
+        outputs = torch.zeros(
+            batch_size, target_length, self.target_vocab_size
+        ).to(self.device)
 
         # We do not provide any initial hidden state to encoder since PyTorch
         # by default initializes it to zeros if not provided
         _, encoder_hidden = self.encoder(encoder_input)
 
         # first input to the decoder is the <SOS> tokens
-        decoder_input = torch.LongTensor([[SOS_token]]).to(self.device)
+        sos_tensor = torch.zeros(batch_size, 1, dtype=torch.long)
+        # decoder_input = torch.LongTensor([[SOS_token]]).to(self.device)
+        decoder_input = torch.LongTensor(sos_tensor).to(self.device)
         decoder_hidden = encoder_hidden
 
         for di in range(target_length):
             output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
 
             # place predictions in a tensor holding predictions for each token
-            outputs[0][di] = output
+            outputs[:, di, :] = output
 
             # decide if we want to use teacher forcing or not
             teacher_forcing = (
@@ -109,7 +113,7 @@ class Seq2Seq(nn.Module):
             # if teacher forcing, use actual next token as the decoder input
             # else, use the prediction
             decoder_input = (
-                target_tensor[0][di].view(-1, 1)
+                target_tensor[:, di].view(-1, 1)
                 if teacher_forcing
                 else top1.view(-1, 1)
             )

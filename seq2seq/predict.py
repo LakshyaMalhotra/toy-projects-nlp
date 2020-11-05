@@ -10,6 +10,7 @@ from utils import *
 from dataset import Fra2EngDataset
 import model
 
+DEVICE = torch.device("cpu")
 if __name__ == "__main__":
     print("-" * 30)
     print("READING DATA AND PREPROCESSING")
@@ -43,12 +44,12 @@ if __name__ == "__main__":
 
     # Define model specific parameters
     encoder_input_size = input_lang.n_words
-    encoder_embed_dim = 100
-    encoder_hidden_size = 128
+    encoder_embed_dim = 300
+    encoder_hidden_size = 512
 
     decoder_input_size = output_lang.n_words
-    decoder_embed_dim = 100
-    decoder_hidden_size = 128
+    decoder_embed_dim = 300
+    decoder_hidden_size = 512
 
     # Instantiate encoder and decoder
     encoder = model.EncoderRNN(
@@ -68,7 +69,9 @@ if __name__ == "__main__":
     )
 
     # Load the model checkpoint
-    seq2seq_model.load_state_dict(torch.load("model_v1.pt"))
+    seq2seq_model.load_state_dict(
+        torch.load("models/model_v2.pt", map_location=DEVICE)
+    )
 
     # Get predictions
     seq2seq_model.eval()
@@ -92,4 +95,3 @@ if __name__ == "__main__":
     print(
         f"Model output: {' '.join([output_lang.idx2word[idx] for idx in top1.tolist()])}"
     )
-
