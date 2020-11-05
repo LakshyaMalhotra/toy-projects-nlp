@@ -26,7 +26,15 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def train(model, data_loader, optimizer, criterion, clip, print_every=2500):
+def train(
+    model,
+    data_loader,
+    optimizer,
+    criterion,
+    clip,
+    print_every=2500,
+    device=DEVICE,
+):
     epoch_loss = 0
     print_loss = 0
     model.train()
@@ -34,6 +42,9 @@ def train(model, data_loader, optimizer, criterion, clip, print_every=2500):
     for i, data in enumerate(data_loader):
         input_tensor = data["input"]
         target_tensor = data["output"]
+
+        input_tensor = input_tensor.to(device)
+        target_tensor = target_tensor.to(device)
 
         optimizer.zero_grad()
 
@@ -46,7 +57,6 @@ def train(model, data_loader, optimizer, criterion, clip, print_every=2500):
         target_tensor = target_tensor.squeeze()
 
         loss = criterion(output, target_tensor)
-        # print(f"Loss: {loss}")
 
         loss.backward()
 
@@ -64,7 +74,7 @@ def train(model, data_loader, optimizer, criterion, clip, print_every=2500):
     return epoch_loss / len(data_loader)
 
 
-def evaluate(model, data_loader, criterion, print_every=100):
+def evaluate(model, data_loader, criterion, print_every=100, device=DEVICE):
     epoch_loss = 0
     print_loss = 0
 
@@ -74,6 +84,9 @@ def evaluate(model, data_loader, criterion, print_every=100):
         for i, data in enumerate(data_loader):
             input_tensor = data["input"]
             target_tensor = data["output"]
+
+            input_tensor = input_tensor.to(device)
+            target_tensor = target_tensor.to(device)
 
             output = model(input_tensor, target_tensor)
             # print(f"Output size: {output.size()}")
@@ -113,8 +126,8 @@ if __name__ == "__main__":
         sentence_vectors.append(vectors)
 
     # Instantiate train and test datasets
-    dataset_train = Fra2EngDataset(sentence_vectors, device=DEVICE)
-    dataset_test = Fra2EngDataset(sentence_vectors, device=DEVICE)
+    dataset_train = Fra2EngDataset(sentence_vectors)
+    dataset_test = Fra2EngDataset(sentence_vectors)
 
     # Split the dataset into train and test
     indices = torch.randperm(len(dataset_train)).tolist()
@@ -131,12 +144,12 @@ if __name__ == "__main__":
 
     # Define model specific parameters
     encoder_input_size = input_lang.n_words
-    encoder_embed_dim = 100
-    encoder_hidden_size = 128
+    encoder_embed_dim = 300
+    encoder_hidden_size = 512
 
     decoder_input_size = output_lang.n_words
-    decoder_embed_dim = 100
-    decoder_hidden_size = 128
+    decoder_embed_dim = 300
+    decoder_hidden_size = 512
 
     # Instantiate encoder and decoder
     encoder = model.EncoderRNN(
@@ -192,8 +205,7 @@ if __name__ == "__main__":
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
-            torch.save(seq2seq_model.state_dict(), "model_v1.pt")
+            torch.save(seq2seq_model.state_dict(), "models/model_v2.pt")
 
         print(f"Time taken: {epoch_mins}m {epoch_secs}s")
         print(f"\tTrain Loss: {train_loss:.3f},  Valid Loss: {valid_loss:.3f}")
-

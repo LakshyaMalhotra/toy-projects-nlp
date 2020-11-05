@@ -2,9 +2,8 @@ import torch
 
 
 class Fra2EngDataset:
-    def __init__(self, pair_vectors, device=torch.device("cpu")):
+    def __init__(self, pair_vectors):
         self.pair_vectors = pair_vectors
-        self.device = device
 
     def __len__(self):
         return len(self.pair_vectors)
@@ -15,7 +14,6 @@ class Fra2EngDataset:
         output_vector = pair[1]
 
         return {
-            "input": torch.LongTensor(input_vector, device=self.device),
-            "output": torch.LongTensor(output_vector, device=self.device),
+            "input": torch.LongTensor(input_vector),
+            "output": torch.LongTensor(output_vector),
         }
-

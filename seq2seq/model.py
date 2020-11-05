@@ -72,21 +72,24 @@ class Seq2Seq(nn.Module):
         ), "Hidden size of encoder and decoder must be equal"
 
     def forward(
-        self, encoder_input, target_tensor, teacher_forcing_ratio=0.5,
+        self,
+        encoder_input,
+        target_tensor,
+        teacher_forcing_ratio=0.5,
     ):
         # tensor to store the decoder outputs
         # shape of target tensor: (batch_size, target_length)
         target_length = target_tensor.size(1)
-        outputs = torch.zeros(
-            1, target_length, self.target_vocab_size, device=self.device
+        outputs = torch.zeros(1, target_length, self.target_vocab_size).to(
+            self.device
         )
 
         # We do not provide any initial hidden state to encoder since PyTorch
         # by default initializes it to zeros if not provided
-        encoder_output, encoder_hidden = self.encoder(encoder_input)
+        _, encoder_hidden = self.encoder(encoder_input)
 
         # first input to the decoder is the <SOS> tokens
-        decoder_input = torch.LongTensor([[SOS_token]])
+        decoder_input = torch.LongTensor([[SOS_token]]).to(self.device)
         decoder_hidden = encoder_hidden
 
         for di in range(target_length):
@@ -112,4 +115,3 @@ class Seq2Seq(nn.Module):
             )
 
         return outputs
-
