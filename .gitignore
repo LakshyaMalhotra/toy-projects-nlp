@@ -26,10 +26,15 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# PyTorch saved models
+*.pt
+
 # data files
 data/
 models/
 .vscode
+.data/
+names/
 
 
 # PyInstaller
@@ -142,3 +147,4 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+seq2seq/src_v2/=0.0.7
