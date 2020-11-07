@@ -14,10 +14,15 @@ class EncoderRNN(nn.Module):
         self.embed = nn.Embedding(input_size, embedding_dim=embed_dim)
         self.rnn = nn.GRU(embed_dim, hidden_size, batch_first=True)
 
-    def forward(self, input_enc):
+    def forward(self, input_enc, input_len):
         embedded = self.embed(input_enc)
         # print(f"Output shape of encoder embedding: {embedded.size()}")
-        output, hidden = self.rnn(embedded)
+        embed_packed = nn.utils.rnn.pack_padded_sequence(
+            embedded, input_len, batch_first=True, enforce_sorted=False
+        )
+        packed_output, hidden = self.rnn(embed_packed)
+
+        output, _ = nn.utils.rnn.pad_packed_sequence(packed_output)
 
         return output, hidden
         # output size = [batch_size, input_length,  hidden_size * n_directions]
@@ -44,8 +49,9 @@ class DecoderRNN(nn.Module):
         # print(f"Output shape of decoder embedding: {embedded.size()}")
         embedded = F.relu(embedded)
 
-        output, hidden = self.rnn(embedded)
-        # output size = [batch_size, seq_len, hidden_dim]
+        output, hidden = self.rnn(embedded, hidden)
+        # print(output.size())
+        # output size = [batch_size, seq_len, n_directions*hidden_dim]
         # hidden_dim = [n_layers*n_directions, batch_size, hidden_size];
         # batch size is in `dim=1` of the hidden size even after setting `batch_first`=True
 
@@ -76,6 +82,7 @@ class Seq2Seq(nn.Module):
         self,
         encoder_input,
         target_tensor,
+        input_len,
         teacher_forcing_ratio=0.5,
     ):
         # tensor to store the decoder outputs
@@ -88,7 +95,7 @@ class Seq2Seq(nn.Module):
 
         # We do not provide any initial hidden state to encoder since PyTorch
         # by default initializes it to zeros if not provided
-        _, encoder_hidden = self.encoder(encoder_input)
+        _, encoder_hidden = self.encoder(encoder_input, input_len)
 
         # first input to the decoder is the <SOS> tokens
         sos_tensor = torch.zeros(batch_size, 1, dtype=torch.long)

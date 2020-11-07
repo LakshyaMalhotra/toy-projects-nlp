@@ -68,7 +68,7 @@ def train(
 
         optimizer.zero_grad()
 
-        output = model(input_tensor, target_tensor)
+        output = model(input_tensor, target_tensor, input_len)
 
         output_dim = output.size(-1)
         output = output.view(-1, output_dim)
@@ -107,7 +107,7 @@ def evaluate(model, data_loader, criterion, print_every=100, device=DEVICE):
             input_tensor = input_tensor.to(device)
             target_tensor = target_tensor.to(device)
 
-            output = model(input_tensor, target_tensor)
+            output = model(input_tensor, target_tensor, input_len, 0)
             # print(f"Output size: {output.size()}")
             # print(f"Target size: {target_tensor.size()}")
 
