@@ -1,97 +1,81 @@
-import time
-import math
-
+import random
 import torch
-import torch.nn as nn
-import numpy as np
-import matplotlib.pyplot as plt
 
-from utils import *
-from dataset import Fra2EngDataset
 import model
+from utils import Preprocess
 
-DEVICE = torch.device("cpu")
+
 if __name__ == "__main__":
-    print("-" * 30)
-    print("READING DATA AND PREPROCESSING")
-    print("-" * 30)
-    sentence_vectors = []
+    DEVICE = torch.device("cpu")
+    batch_size = 64
 
-    # Get the input/output languages and sentence pairs
-    input_lang, output_lang, pairs = prepare_data(
-        lang1="eng", lang2="fra", reverse=True
+    # instantiate preprocess class
+    pp = Preprocess(verbose=True, batch_size=batch_size)
+
+    # create datasets and vocabularies
+    pp.get_dataset()
+
+    # get train and valid iterators
+    _, valid_iterator = pp.batchify()
+
+    # get the batch from valid iterator
+    batch = next(iter(valid_iterator))
+
+    # get random input and target tensor from the batch
+    idx = random.choice(range(batch_size))
+    print(idx)
+    input_tensor = batch.src[:, idx]  # input_tensor shape: [seq_len]
+    target_tensor = batch.trg[:, idx]  # target_tensor shape: [seq_len]
+
+    # vocabulary sizes
+    input_size = pp.input_size
+    output_size = pp.target_size
+
+    # input parameters to the model
+    encoder_embed_dim = 500
+    encoder_hidden_size = 1024
+
+    decoder_embed_dim = 500
+    decoder_hidden_size = 1024
+
+    # define encoder and decoder
+    encoder = model.Encoder(input_size, encoder_embed_dim, encoder_hidden_size)
+    decoder = model.Decoder(output_size, decoder_embed_dim, decoder_hidden_size)
+
+    # define the complete model
+    net = model.Seq2Seq(encoder, decoder, DEVICE)
+
+    # load the saved model
+    net.load_state_dict(
+        torch.load("lang_translation_1.pt", map_location=DEVICE)
     )
 
-    # Create sentence vector pairs for input and output language pairs
-    for pair in pairs:
-        vectors = vector_from_pair(input_lang, output_lang, pair)
-        sentence_vectors.append(vectors)
+    # put the model to evaluation mode
+    net.eval()
 
-    # Sample random sentence pair
-    idx = np.random.choice(len(sentence_vectors))
-    input_vector = sentence_vectors[idx][0]
-    target_vector = sentence_vectors[idx][1]
+    # reshape the input and target to feed them in the model
+    inp = input_tensor.view(-1, 1)  # input_tensor shape: [seq_len, 1]
+    targ = target_tensor.view(-1, 1)  # target_tensor shape: [seq_len, 1]
 
-    # Converting the vectors to torch tensors
-    input_tensor = torch.LongTensor(input_vector)
-    target_tensor = torch.LongTensor(target_vector)
-
-    input_tensor = input_tensor.unsqueeze(0)
-    target_tensor = target_tensor.unsqueeze(0)
-
-    print(input_tensor)
-    print(target_tensor)
-
-    # Define model specific parameters
-    encoder_input_size = input_lang.n_words
-    encoder_embed_dim = 300
-    encoder_hidden_size = 512
-
-    decoder_input_size = output_lang.n_words
-    decoder_embed_dim = 300
-    decoder_hidden_size = 512
-
-    # Instantiate encoder and decoder
-    encoder = model.EncoderRNN(
-        input_size=encoder_input_size,
-        embed_dim=encoder_embed_dim,
-        hidden_size=encoder_hidden_size,
-    )
-    decoder = model.DecoderRNN(
-        hidden_size=decoder_hidden_size,
-        embed_dim=decoder_embed_dim,
-        output_size=decoder_input_size,
-    )
-
-    # Define the model
-    seq2seq_model = model.Seq2Seq(
-        encoder, decoder, target_vocab_size=decoder_input_size
-    )
-
-    # Load the model checkpoint
-    seq2seq_model.load_state_dict(
-        torch.load("models/model_v2.pt", map_location=DEVICE)
-    )
-
-    # Get predictions
-    seq2seq_model.eval()
-
+    # perform inference
     with torch.no_grad():
-        output = seq2seq_model(input_tensor, target_tensor)
-        output_dim = output.size(-1)
-        output = output.view(-1, output_dim)
-        _, top1 = output.topk(1, dim=1)
-        top1 = top1.squeeze()
+        output = net(inp, targ)
 
-    print(output.size())
-    print(top1)
+    # create input, target and output arrays from the tensors
+    input_arr = input_tensor.cpu().numpy().tolist()[::-1]
+    input_arr = [val for val in input_arr if val not in range(4)]
+    target_arr = target_tensor.cpu().numpy().tolist()
+    target_arr = [val for val in target_arr if val not in range(4)]
+    output = output.squeeze()
+    output_arr = output.argmax(1).cpu().numpy().tolist()
+    output_arr = [val for val in output_arr if val not in range(4)]
 
-    print(
-        f"Input sentence: {' '.join([input_lang.idx2word[idx] for idx in input_vector])}"
-    )
-    print(
-        f"Target sentence: {' '.join([output_lang.idx2word[idx] for idx in target_vector])}"
-    )
-    print(
-        f"Model output: {' '.join([output_lang.idx2word[idx] for idx in top1.tolist()])}"
-    )
+    # create sentences from indexes
+    input_sent = " ".join([pp.source.vocab.itos[val] for val in input_arr])
+    target_sent = " ".join([pp.target.vocab.itos[val] for val in target_arr])
+    output_sent = " ".join([pp.target.vocab.itos[val] for val in output_arr])
+
+    # print results
+    print(f"Input sentence:  {input_sent}")
+    print(f"Target sentence: {target_sent}")
+    print(f"Model output:    {output_sent}")

@@ -1,150 +1,102 @@
-import unicodedata
-import re
+# utils.py
+# Library imports
 import random
-from collections import defaultdict
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import torch
+from torchtext.datasets import Multi30k
 
-# Global variables to be used everywhere
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SOS_token = 0
-EOS_token = 1
-MAX_LENGTH = 10
-
-eng_prefixes = (
-    "i am ",
-    "i m ",
-    "he is",
-    "he s ",
-    "she is",
-    "she s ",
-    "you are",
-    "you re ",
-    "we are",
-    "we re ",
-    "they are",
-    "they re ",
-)
-
-# Class to create look-up tables for the vocabulary
-class Lang:
-    def __init__(self, name):
-        self.name = name
-        self.word2idx = defaultdict(int)
-        self.word2count = defaultdict(int)
-        self.idx2word = {0: "SOS", 1: "EOS"}
-        self.n_words = 2  # count for EOS and SOS
-
-    def add_sentence(self, sentence):
-        for word in sentence.split(" "):
-            self.add_word(word)
-
-    def add_word(self, word):
-        if word not in self.word2idx:
-            self.word2idx[word] = self.n_words
-            self.word2count[word] = 1
-            self.idx2word[self.n_words] = word
-            self.n_words += 1
-        else:
-            self.word2count[word] += 1
+from torchtext.data import Field, BucketIterator
+import spacy
 
 
-# Change unicode characters to ASCII
-def unicode_to_ascii(word):
-    word = "".join(
-        c
-        for c in unicodedata.normalize("NFD", word)
-        if unicodedata.category(c) != "Mn"
-    )
-    return word
+# SEED everything
+# SEED = 23
+# random.seed(SEED)
+# torch.manual_seed(SEED)
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed(SEED)
+#     torch.backends.cudnn.deterministic = True
+
+# load the language models
+spacy_en = spacy.load("en_core_web_sm")
+spacy_de = spacy.load("de_core_news_sm")
+
+# class to do the basic preprocessing
+class Preprocess(Field, BucketIterator, Multi30k):
+    def __init__(
+        self, batch_size=64, verbose=False, device=torch.device("cpu")
+    ):
+        super(Preprocess, self).__init__()
+        self.verbose = verbose
+        self.batch_size = batch_size
+        self.device = device
+        self.source = Field(
+            tokenize=self.tokenize_de,
+            init_token="<sos>",
+            eos_token="<eos>",
+            lower=True,
+        )
+        self.target = Field(
+            tokenize=self.tokenize_en,
+            init_token="<sos>",
+            eos_token="<eos>",
+            lower=True,
+        )
+
+    @staticmethod
+    def tokenize_de(text):
+        """
+        Tokenizes text from a string and create a list of tokens after reversing it.
+        """
+        return [tok.text for tok in spacy_de.tokenizer(text)][::-1]
+
+    @staticmethod
+    def tokenize_en(text):
+        """
+        Tokenizes text from a string and create a list of tokens.
+        """
+        return [tok.text for tok in spacy_en.tokenizer(text)]
+
+    def get_dataset(self):
+        self.train_data, self.valid_data, _ = Multi30k.splits(
+            exts=(".de", ".en"), fields=(self.source, self.target)
+        )
+        self.source.build_vocab(self.train_data, min_freq=2)
+        self.target.build_vocab(self.train_data, min_freq=2)
+        self.input_size = len(self.source.vocab)
+        self.target_size = len(self.target.vocab)
+
+        if self.verbose:
+            print(
+                f"Number of training examples: {len(self.train_data.examples)}"
+            )
+            print(
+                f"Number of validation examples: {len(self.valid_data.examples)}"
+            )
+            print("Vocabularies created...")
+            print(f"Source vocabulary size: {self.input_size}")
+            print(f"Target vocabulary size: {self.target_size}")
+
+    def batchify(self):
+        self.train_iterator, self.valid_iterator = BucketIterator.splits(
+            (self.train_data, self.valid_data),
+            batch_size=self.batch_size,
+            device=self.device,
+        )
+        return self.train_iterator, self.valid_iterator
 
 
-# Lowercase everything and remove punctuation
-def normalize_word(word):
-    word = unicode_to_ascii(word.lower().strip())
-    word = re.sub(r"([.!?])", r" \1", word)
-    word = re.sub(r"[.!?]", r"", word)
-    word = re.sub(r"[^a-zA-Z]+", r" ", word)
-    word = word.strip()
-    return word
-
-
-# Read the input file and generate sentence pairs
-def read_langs(lang1, lang2, reverse=False):
-    print("Reading lines...")
-
-    # read the file
-    lines = (
-        open(f"data/{lang1}-{lang2}.txt", encoding="utf-8")
-        .read()
-        .strip()
-        .split("\n")
-    )
-
-    # split every line into pair of sentences and normalize
-    pairs = [
-        [normalize_word(word) for word in line.split("\t")] for line in lines
-    ]
-
-    if reverse:
-        pairs = [list(reversed(p)) for p in pairs]
-        input_lang = Lang(lang2)
-        output_lang = Lang(lang1)
-
-    else:
-        input_lang = Lang(lang1)
-        output_lang = Lang(lang2)
-
-    return input_lang, output_lang, pairs
-
-
-def filter_pair(p):
-    return (
-        len(p[0].split(" ")) < MAX_LENGTH
-        and len(p[1].split(" ")) < MAX_LENGTH
-        and p[1].startswith(eng_prefixes)
-    )
-
-
-def filter_pairs(pairs):
-    return [pair for pair in pairs if filter_pair(pair)]
-
-
-def prepare_data(lang1, lang2, reverse=False):
-    input_lang, output_lang, pairs = read_langs(lang1, lang2, reverse)
-    print(f"Read {len(pairs)} sentence pairs")
-    pairs = filter_pairs(pairs)
-    print(f"Filtered to {len(pairs)} sentence pairs")
-    print("Counting words...")
-    for pair in pairs:
-        input_lang.add_sentence(pair[0])
-        output_lang.add_sentence(pair[1])
-
-    print("Counted words:")
-    print("\t", input_lang.name + ":", input_lang.n_words)
-    print("\t", output_lang.name + ":", output_lang.n_words)
-    return input_lang, output_lang, pairs
-
-
-def vector_from_sentence(lang, sentence):
-    return [lang.word2idx[word] for word in sentence.split(" ")]
-
-
-def vector_from_pair(input_lang, output_lang, pair):
-    input_vector = vector_from_sentence(input_lang, pair[0])
-    output_vector = vector_from_sentence(output_lang, pair[1])
-    input_vector.append(EOS_token)
-    output_vector.append(EOS_token)
-
-    return [input_vector, output_vector]
-
-
-# if __name__ == "__main__":
-#     input_lang, output_lang, pairs = prepare_data("eng", "fra", True)
-#     print(random.choice(pairs))
-
-#     sentence_vectors = []
-#     for pair in pairs:
-#         vectors = vector_from_pair(pair)
-#         sentence_vectors.append(vectors)
-#     print(sentence_vectors[2356:2366])
+if __name__ == "__main__":
+    pp = Preprocess(verbose=True, batch_size=8)
+    # create datasets and vocabularies
+    pp.get_dataset()
+    train_it, valid_it = pp.batchify()
+    count = 0
+    for batch in train_it:
+        print(f"Source tensor: {batch.src}")
+        print(f"Target tensor: {batch.trg}")
+        count += 1
+        print(count)
