@@ -1,3 +1,5 @@
+# model.py
+# Based on the paper: https://arxiv.org/abs/1406.1078
 import random
 
 import torch
